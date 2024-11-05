@@ -1,4 +1,4 @@
-# AllOfUs VTE Study
+# All Of Us VTE Study
 
 This repository contains the code used for my thesis project, which aims to determine genetic variants associated with Venous Thromboembolism (VTE) in African Americans.
 
