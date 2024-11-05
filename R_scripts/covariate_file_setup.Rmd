@@ -1,0 +1,94 @@
+---
+title: "Covariate File Setup"
+output: html_document
+date: "2024-09-23"
+---
+
+```{r}
+# Install necessary packages (only run once)
+knitr::opts_chunk$set(echo = TRUE)
+install.packages("ggplot2")
+library(ggplot2)
+library(tidyverse)
+```
+
+```{r}
+#covariate file setup
+
+# Import the final dataset from PLINK
+completed_df <- read.table("~/plink_files.fam", quote="\"", comment.char="")
+head(completed_df)
+dim(completed_df)
+
+## Rename columns for clarity
+colnames(completed_df) <- c("FID", "IID", "PID", "MID", "Sex", "Pheno")
+head(completed_df)
+
+# Import PCA results from PLINK
+plink <- read.table("~/plink.eigenvec", quote="\"", comment.char="")
+head(plink)
+dim(plink)
+
+# Rename columns for clarity
+colnames(plink) <- c("FID", "IID", "PC1", "PC2", "PC3", "PC4", "PC5", "PC6", "PC7", "PC8", "PC9", "PC10")
+head(plink)
+
+# Import age data, the year object is from the age.RMD file
+head(year)
+dim(year)
+
+# Combine the datasets to create a comprehensive covariate file
+cov_file <- completed_df %>% 
+  left_join(plink, by = c("FID", "IID")) %>% 
+  left_join(year, by = c("IID" = "person_id"))
+head(cov_file)
+tail(cov_file)
+dim(cov_file)
+
+# Select relevant columns for the final covariate file
+final <- cov_file %>% select(FID, IID, AGE, PC1, PC2, PC3)
+head(final)
+dim(final)
+
+# Select relevant columns for the final covariate file
+write.table(final, file = "covariate.txt", sep = "\t", quote = FALSE, row.names = FALSE,  col.names = TRUE)
+
+```
+#Plotting PCA results
+```{r}
+# Plot PCA results
+# Create a phenotype data frame by merging with outcome data
+pheno <- final %>% left_join(outcome, by = c("IID" = "person_id"))
+head(pheno)
+dim(pheno)
+
+# Ensure there are no NA values in the outcome variable
+any(is.na(pheno$outcome))
+
+# Convert the outcome variable to a factor with descriptive labels
+pheno$outcome <- factor(pheno$outcome, levels = c(0, 1), labels = c("Control", "Case"))
+
+# PCA plot: PC1 vs PC2
+ggplot(pheno, aes(x = PC1, y = PC2, color = outcome)) +
+  geom_point(alpha = 0.7) +
+  labs(title = "PCA Plot: PC1 vs PC2", x = "Principal Component 1", y = "Principal Component 2") +
+  theme_minimal() +
+  scale_color_manual(values = c("blue", "red"))
+
+# PCA plot: PC1 vs PC3
+ggplot(pheno, aes(x = PC1, y = PC3, color = outcome)) +
+  geom_point(alpha = 0.7) +
+  labs(title = "PCA Plot: PC1 vs PC3", x = "Principal Component 1", y = "Principal Component 3") +
+  theme_minimal() +
+  scale_color_manual(values = c("blue", "red"))
+
+# Install GGally for pair plots (only run once)
+install.packages("GGally") 
+library(GGally) 
+
+# Create pair plots for the selected columns in the phenotype data
+ggpairs(pheno, columns = 4:6, upper = "blank", aes(color = outcome))
+
+
+```
+

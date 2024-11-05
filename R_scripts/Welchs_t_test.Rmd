@@ -1,0 +1,268 @@
+---
+title: "Welch's t-test"
+output: html_document
+date: "2024-04-12"
+---
+
+```{r}
+# Load required libraries
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(bigrquery)
+library(dplyr)
+library(writexl)
+```
+
+```{r}
+# Extract data into data frames
+## The code to extract individual-level data from the All of Us project was executed here.
+## Note: The actual extraction code is not included for privacy reasons.
+
+```
+
+#Setting up the dataframe for analysis
+
+```{r, echo=TRUE}
+#Rename the measurement data frames for clarity
+cases_measurements <- dataset_78885315_measurement_df
+control_measurements <- dataset_40510486_measurement_df
+
+#Label cases as 1 (affected) and controls as 0 (unaffected) for outcome analysis
+cases_measurements$outcome <- 1
+control_measurements$outcome <- 0
+```
+
+
+```{r}
+# Combine the cases and controls into one dataframe called lab_measurements
+lab_measurement <- bind_rows(control_measurements, cases_measurements)
+head(lab_measurement)
+tail(lab_measurement)
+dim(lab_measurement)
+
+```
+
+```{r}
+# Reshape the data to wide format using pivot_wider
+## This aggregates the measurement values by person_id and outcome, summarizing to the mean
+
+wider_measurements <- lab_measurement %>%
+  group_by(person_id, outcome, standard_concept_name) %>%
+  summarise(value_as_number = mean(value_as_number)) %>%
+  pivot_wider(
+    id_cols = c(person_id, outcome),
+    names_from = standard_concept_name,
+    values_from = value_as_number
+  )
+head(wider_measurements)
+dim(wider_measurements)
+
+# Get the number of controls and cases
+contol_number <- wider_measurements %>% filter(outcome == 0) 
+dim(contol_number)
+
+case_number <- wider_measurements %>% filter(outcome == 1) 
+dim(case_number)
+
+
+# Check for any missing values in person_id
+any(is.na(wider_measurements$person_id))
+```
+
+```{r}
+# Filter to keep columns with less than 50% missing values
+filtered_measurements <- wider_measurements %>%
+  select(where(~ mean(is.na(.)) < 0.5))  
+
+head(filtered_measurements)
+dim(filtered_measurements)
+
+```
+
+```{r}
+# Change the column names to replace spaces with underscores for easier access
+colnames(filtered_measurements) <- gsub(" ", "_", colnames(filtered_measurements))
+colnames(filtered_measurements)
+```
+
+# Removing outlier values in each column
+
+```{r}
+head(filtered_measurements)
+dim(filtered_measurements)
+
+# Extract person_id and outcome for further processing
+outcome <- filtered_measurements %>% select(person_id, outcome)
+head(outcome)
+
+# Rename specific measurement columns for clarity
+filtered_measurements <- filtered_measurements %>%
+  rename(
+    BMI = `Body_mass_index_(BMI)_[Ratio]`,
+    hip_circumference = `PhenX_-_hip_circumference_protocol_020801`
+  )
+
+# Check the updated column names
+colnames(filtered_measurements)
+
+
+##Calculate IQR and filter outliers for multiple measurements
+# Calculate lower and upper bounds for outlier removal based on IQR for various measurements
+
+### Adult Waist Circumference Protocol
+Q1_awcp <- quantile(filtered_measurements$Adult_Waist_Circumference_Protocol, 0.25, na.rm = TRUE)
+Q3_awcp <- quantile(filtered_measurements$Adult_Waist_Circumference_Protocol, 0.75, na.rm = TRUE)
+IQR_awcp <- Q3_awcp - Q1_awcp
+lower_bound_awcp <- Q1_awcp - 1.5 * IQR_awcp
+upper_bound_awcp <- Q3_awcp + 1.5 * IQR_awcp
+
+## Body Height
+Q1_Body_height <- quantile(filtered_measurements$Body_height, 0.25, na.rm = TRUE)
+Q3_Body_height <- quantile(filtered_measurements$Body_height, 0.75, na.rm = TRUE)
+IQR_Body_height <- Q3_Body_height - Q1_Body_height
+lower_bound_Body_height <- Q1_Body_height - 1.5 * IQR_Body_height
+upper_bound_Body_height <- Q3_Body_height + 1.5 * IQR_Body_height
+
+## BMI
+Q1_BMI <- quantile(filtered_measurements$BMI, 0.25, na.rm = TRUE)
+Q3_BMI <- quantile(filtered_measurements$BMI, 0.75, na.rm = TRUE)
+IQR_BMI <- Q3_BMI - Q1_BMI
+lower_bound_BMI <- Q1_BMI - 1.5 * IQR_BMI
+upper_bound_BMI <- Q3_BMI + 1.5 * IQR_BMI
+
+## Body Weight
+Q1_Body_weight <- quantile(filtered_measurements$Body_weight, 0.25, na.rm = TRUE)
+Q3_Body_weight <- quantile(filtered_measurements$Body_weight, 0.75, na.rm = TRUE)
+IQR_Body_weight <- Q3_Body_weight - Q1_Body_weight
+lower_bound_Body_weight <- Q1_Body_weight - 1.5 * IQR_Body_weight
+upper_bound_Body_weight <- Q3_Body_weight + 1.5 * IQR_Body_weight
+
+## Diastolic Blood Pressure
+Q1_Diastolic_blood_pressure <- quantile(filtered_measurements$Diastolic_blood_pressure, 0.25, na.rm = TRUE)
+Q3_Diastolic_blood_pressure <- quantile(filtered_measurements$Diastolic_blood_pressure, 0.75, na.rm = TRUE)
+IQR_Diastolic_blood_pressure <- Q3_Diastolic_blood_pressure - Q1_Diastolic_blood_pressure
+lower_bound_Diastolic_blood_pressure <- Q1_Diastolic_blood_pressure - 1.5 * IQR_Diastolic_blood_pressure
+upper_bound_Diastolic_blood_pressure <- Q3_Diastolic_blood_pressure + 1.5 * IQR_Diastolic_blood_pressure
+
+## Heart Rate
+Q1_Heart_rate <- quantile(filtered_measurements$Heart_rate, 0.25, na.rm = TRUE)
+Q3_Heart_rate <- quantile(filtered_measurements$Heart_rate, 0.75, na.rm = TRUE)
+IQR_Heart_rate <- Q3_Heart_rate - Q1_Heart_rate
+lower_bound_Heart_rate <- Q1_Heart_rate - 1.5 * IQR_Heart_rate
+upper_bound_Heart_rate <- Q3_Heart_rate + 1.5 * IQR_Heart_rate
+
+## Hip Circumference
+Q1_hip_circumference <- quantile(filtered_measurements$hip_circumference, 0.25, na.rm = TRUE)
+Q3_hip_circumference <- quantile(filtered_measurements$hip_circumference, 0.75, na.rm = TRUE)
+IQR_hip_circumference <- Q3_hip_circumference - Q1_hip_circumference
+lower_bound_hip_circumference <- Q1_hip_circumference - 1.5 * IQR_hip_circumference
+upper_bound_hip_circumference <- Q3_hip_circumference + 1.5 * IQR_hip_circumference
+
+## Systolic Blood Pressure
+Q1_Systolic_blood_pressure <- quantile(filtered_measurements$Systolic_blood_pressure, 0.25, na.rm = TRUE)
+Q3_Systolic_blood_pressure <- quantile(filtered_measurements$Systolic_blood_pressure, 0.75, na.rm = TRUE)
+IQR_Systolic_blood_pressure <- Q3_Systolic_blood_pressure - Q1_Systolic_blood_pressure
+lower_bound_Systolic_blood_pressure <- Q1_Systolic_blood_pressure - 1.5 * IQR_Systolic_blood_pressure
+upper_bound_Systolic_blood_pressure <- Q3_Systolic_blood_pressure + 1.5 * IQR_Systolic_blood_pressure
+
+# Filter out outliers based on IQR criteria for each measurement
+cleaned_data <- filtered_measurements %>%
+  filter(
+    `Adult_Waist_Circumference_Protocol` >= lower_bound_awcp,
+    `Adult_Waist_Circumference_Protocol` <= upper_bound_awcp,
+    Body_height >= lower_bound_Body_height,
+    Body_height <= upper_bound_Body_height,
+    BMI >= lower_bound_BMI,
+    BMI <= upper_bound_BMI,
+    Body_weight >= lower_bound_Body_weight,
+    Body_weight <= upper_bound_Body_weight,
+    Diastolic_blood_pressure >= lower_bound_Diastolic_blood_pressure,
+    Diastolic_blood_pressure <= upper_bound_Diastolic_blood_pressure,
+    Heart_rate >= lower_bound_Heart_rate,
+    Heart_rate <= upper_bound_Heart_rate,
+    hip_circumference >= lower_bound_hip_circumference,
+    hip_circumference <= upper_bound_hip_circumference,
+    Systolic_blood_pressure >= lower_bound_Systolic_blood_pressure,
+    Systolic_blood_pressure <= upper_bound_Systolic_blood_pressure
+  )
+
+
+# Check the results after cleaning
+head(cleaned_data)
+dim(cleaned_data)
+
+# Remove the person_id column for analysis
+no_person_id <- cleaned_data[, -1]
+head(no_person_id)
+dim(no_person_id)
+
+```
+
+
+```{r}
+# F Test to Compare Two Variances
+## This tests the assumption of equal variances required for t-test
+
+f_test_result_waist <- var.test(Adult_Waist_Circumference_Protocol ~ outcome, data = no_person_id)
+f_test_result_waist
+
+f_test_result_Body_height <- var.test(Body_height ~ outcome, data = no_person_id)
+f_test_result_Body_height
+
+f_test_result_BMI <- var.test(BMI ~ outcome, data = no_person_id)
+f_test_result_BMI
+
+f_test_result_Body_weight <- var.test(Body_weight ~ outcome, data = no_person_id)
+f_test_result_Body_weight
+
+f_test_result_Diastolic_blood_pressure <- var.test(Diastolic_blood_pressure ~ outcome, data = no_person_id)
+f_test_result_Diastolic_blood_pressure
+
+f_test_result_Heart_rate <- var.test(Heart_rate ~ outcome, data = no_person_id)
+f_test_result_Heart_rate
+
+f_test_result_hip_circumference <- var.test(hip_circumference ~ outcome, data = no_person_id)
+f_test_result_hip_circumference
+
+f_test_result_Systolic_blood_pressure <- var.test(Systolic_blood_pressure ~ outcome, data = no_person_id)
+f_test_result_Systolic_blood_pressure
+
+
+```
+
+
+
+```{r}
+# Welch Two Sample t-test
+## Conduct t-tests to compare means between cases and controls for each measurement
+
+
+t_test_result_waist <- t.test(Adult_Waist_Circumference_Protocol ~ outcome, data = no_person_id)
+t_test_result_waist
+
+t_test_result_Body_height <- t.test(Body_height ~ outcome, data = no_person_id)
+t_test_result_Body_height
+
+t_test_result_BMI <- t.test(BMI ~ outcome, data = no_person_id)
+t_test_result_BMI
+
+t_test_result_Body_weight <- t.test(Body_weight ~ outcome, data = no_person_id)
+t_test_result_Body_weight
+
+t_test_result_Diastolic_blood_pressure <- t.test(Diastolic_blood_pressure ~ outcome, data = no_person_id)
+t_test_result_Diastolic_blood_pressure
+
+t_test_result_Heart_rate <- t.test(Heart_rate ~ outcome, data = no_person_id)
+t_test_result_Heart_rate
+
+t_test_result_hip_circumference <- t.test(hip_circumference ~ outcome, data = no_person_id)
+t_test_result_hip_circumference
+
+t_test_result_Systolic_blood_pressure <- t.test(Systolic_blood_pressure ~ outcome, data = no_person_id)
+t_test_result_Systolic_blood_pressure
+
+```
+
+
+
+

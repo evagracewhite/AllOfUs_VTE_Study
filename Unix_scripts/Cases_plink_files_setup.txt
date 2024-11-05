@@ -1,0 +1,41 @@
+### Script for Processing Case PLINK Files ###
+
+## Step 1: Copy Case Files to Local Directory
+# Using Google Cloud Storage to copy files to the working directory
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/data/test_plink_cases.bed /home/jupyter/cases/
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/data/test_plink_cases.bim /home/jupyter/cases/
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/data/test_plink_cases.fam /home/jupyter/cases/
+
+## Step 2: Update Phenotype Information in .fam File
+# Set phenotype column (column 6) to "2" for all individuals to indicate case status
+awk '{$6=2; print}' /home/jupyter/cases/test_plink_cases.fam > phenotype_updated.txt
+# Preview the updated phenotype file
+head phenotype_updated.txt
+# Replace original .fam file with updated phenotype file
+mv phenotype_updated.txt /home/jupyter/cases/test_plink_cases.fam
+
+## Step 3: Perform Initial Quality Control (QC) on Case Data
+# Applying filters to exclude low-quality data
+plink --bfile /home/jupyter/cases/test_plink_cases \
+      --geno 0.05 \
+      --mac 20 \
+      --mind 0.05 \
+      --hwe 0.0001 \
+      --make-bed \
+      --out cases_qc
+# QC result: 13411680 variants and 1407 individuals pass filters
+
+## Step 4: Update Sex Information
+# Copy the sex update file (from R environment or another source)
+gsutil -m cp /home/rstudio/sex_cases.txt gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+gsutil -m cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/sex_cases.txt /home/jupyter/cases/
+
+# Update sex information in the PLINK dataset using the provided file
+plink --bfile cases_qc --update-sex /home/jupyter/cases/sex_cases.txt --make-bed --out updated_sex_cases
+# QC result: 13411680 variants and 1407 individuals pass filters, with updated genotyping rate of 0.999194
+
+## Step 5: Remove Individuals with Unknown Sex
+# Create a list of individuals with sex coded as "0" (unknown) and remove them
+awk '$5 == 0 {print $1, $2}' updated_sex_cases.fam > remove_ids.txt
+plink --bfile updated_sex_cases --remove remove_ids.txt --make-bed --out cases_ready_for_merge
+# Final QC result: 13411680 variants and 1382 individuals pass filters

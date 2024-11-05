@@ -1,0 +1,80 @@
+
+### Logistic Regression Analysis Script ###
+
+# Upload initial PLINK files to cloud storage
+gsutil -m cp plink_files.fam gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+
+### PCA Analysis ###
+# Run PCA to account for population stratification
+
+# Step 1: Prune SNPs for PCA analysis
+plink --bfile plink_files --indep-pairwise 50 5 0.2 --out pruned_pca
+plink --bfile plink_files --extract pruned_pca.prune.in --make-bed --out pruned_pca
+# QC result: 3140147 variants and 31630 individuals remain; 1217 cases, 30413 controls
+
+# Step 2: Generate principal components
+plink --bfile pruned_pca --pca 10
+
+# Upload PCA output to cloud storage
+gsutil -m cp plink.eigenvec gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+
+
+
+### Data Preparation in R ###
+# Download PCA and .fam files for data combination in R
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/plink.eigenvec /home/rstudio/plink.eigenvec
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/plink_files.fam /home/rstudio/plink_files.fam
+
+# Upload covariate file after R processing
+gsutil -m cp /home/rstudio/covariate.txt gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+
+# Download covariate file for further terminal operations
+gsutil -m cp -r gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/covariate.txt /home/jupyter/merging
+
+
+
+### Logistic Regression Analysis ###
+
+# Run logistic regression using age, sex, and PCA1-PCA3 as covariates
+plink --bfile plink_files --covar covariate.txt --logistic sex --ci 0.95 --out logistic_regression
+# Output: logistic_regression.assoc.logistic
+
+
+
+### Analyzing Logistic Regression Results ###
+
+# Check for significant SNPs (ADD effect)
+awk '$5 == "ADD" {print $1, $2, $3, $12}' logistic_regression.assoc.logistic > log_regress.txt
+gsutil -m cp log_regress.txt gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+
+# Count SNPs with p-value < 5e-8 (genome-wide significance threshold)
+awk '{if ($4 < 0.00000005) count++} END {print count}' log_regress.txt  # Output: 4
+
+# Extract SNPs meeting genome-wide significance
+awk '$5 == "ADD" && $12 < 0.00000005' logistic_regression.assoc.logistic > significant_snps.txt
+
+# Upload for further analysis in R
+gsutil -m cp log_regress_for_R.txt gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/log_regress.txt /home/rstudio/log_regress.txt
+
+# Check minor allele frequency of significant SNPs
+awk '{print $2}' significant_snps.txt > snps_to_extract.txt
+plink --bfile plink_files --extract snps_to_extract.txt --freq
+
+# Count SNPs with suggestive significance (p-value < 1e-5)
+awk '$5 == "ADD" && $12 < 0.00001' logistic_regression.assoc.logistic > suggestive_sig.txt
+wc -l suggestive_sig.txt
+
+
+
+### Genotype Analysis for Significant SNPs ###
+
+# Extract genotypes for significant SNPs
+plink --bfile plink_files --extract snps_to_extract.txt --recode --out only_sig_snps
+
+# Upload genotype data for downstream analysis
+gsutil -m cp only_sig_snps.ped  gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/only_sig_snps.ped /home/rstudio/only_sig_snps.ped
+
+
+

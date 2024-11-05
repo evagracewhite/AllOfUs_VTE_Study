@@ -1,0 +1,74 @@
+---
+title: "Age of Cases and Controls"
+output: html_document
+date: "2024-07-13"
+---
+
+```{r}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r}
+# Load required libraries
+library(tidyverse)
+library(bigrquery)
+library(lubridate)
+
+```
+
+
+```{r}
+# Extract data into data frames
+## The code to extract individual-level data from the All of Us project was executed here.
+## Note: The actual extraction code is not included for privacy reasons.
+```
+
+```{r}
+# Import measurement data for controls and cases
+## Load control measurements and case measurements from respective datasets
+control_measurement <- dataset_68372732_measurement_df
+case_measurement <- dataset_29342928_measurement_df
+```
+
+
+```{r}
+# Import date of birth for cases and controls
+## Note: Date of birth can be accessed from the control_df object in sex_at_birth.rmd 
+## and from the cases_df object in sex_at_birth.rmd.
+```
+
+```{r}
+# Extract date of birth from the cases and controls data frames
+# Select only the person_id and date_of_birth columns for analysis
+cases_dob <- cases_df %>% select(person_id, date_of_birth)
+head(cases_dob)       
+dim(cases_dob)       
+
+control_dob <- control_df %>% select(person_id, date_of_birth)
+head(control_dob)     
+dim(control_dob)     
+
+# Combine cases and controls into a single data frame
+dob <- bind_rows(cases_dob, control_dob)
+head(dob)             
+tail(dob)            
+dim(dob)          
+
+# Calculate age from date of birth
+dob$AGE <- floor(interval(dob$date_of_birth, Sys.Date()) / years(1))
+head(dob)            
+
+# Create a data frame with person_id and corresponding ages
+year <- dob %>% select(person_id, AGE)
+head(year)           
+dim(year)            
+
+# Filter to check for individuals below the age of 18
+year %>% filter(AGE < 18) 
+# Result should show if there are any individuals below the age of 18
+
+```
+
+
+

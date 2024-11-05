@@ -1,0 +1,130 @@
+---
+title: "Post GWAS Analysis"
+output: html_document
+date: "2024-07-12"
+---
+
+```{r}
+# Install and load additional necessary libraries for analysis and visualization
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+install.packages("qqman")
+library(qqman)
+library(readr)
+library(ggplot2)
+```
+
+#QQ Plot and Manhattan Plot
+```{r}
+# Load GWAS results for QQ plot
+file2 <- read.csv("~/log_regress.txt", sep="", header = TRUE)
+head(file2)
+dim(file2)
+
+# Rename columns for clarity
+colnames(file2) <- c("CHR", "SNP", "BP", "P")
+
+# Summary statistics for p-values
+summary(file2$P)
+
+# Filter out rows with p-values of 0 or NA
+file_updated2 <- file2 %>% filter(P != 0 & !is.na(P))
+summary(file_updated2$P)
+
+# Generate a QQ plot to assess the distribution of p-values
+qq(file_updated2$P)
+
+
+# Convert p-values to chi-square statistics for lambda calculation
+chisq_stats <- qchisq(1 - file_updated2$P, df = 1)
+median_observed <- median(chisq_stats, na.rm = TRUE)
+median_expected <- qchisq(0.5, df = 1)  # This is a constant = 0.4549
+lambda <- median_observed / median_expected
+print(lambda)
+
+
+# Create a Manhattan plot to visualize SNP significance across the genome
+genome_wide_threshold <- -log10(5e-8)  
+significant_snps <- file_updated2$SNP[file_updated2$P < 5e-8] 
+manhattan(file_updated2, highlight = significant_snps, annotatePval = 5e-8) 
+
+```
+
+#Setting up a file for LocusZoom
+
+```{r}
+# For locus zoom plot: filter SNPs with p-values less than 0.01
+snps_less_than <- file_updated2 %>% filter(P < 0.01)
+
+# Separate SNP column into individual components (if needed)
+check <- snps_less_than %>%
+  separate(SNP, into = c("Chromosome", "Position", "Ref_Allele", "Alt_Allele"), sep = ":")
+
+# Create a locus zoom dataset with relevant columns
+locus_zoom <- check %>% select(CHR, BP, Ref_Allele, Alt_Allele, P)
+head(locus_zoom)  
+dim(locus_zoom) 
+
+# Write the locus zoom data to a text file for further analysis
+write.table(locus_zoom, file = "locus_zoom.txt", sep = "\t", quote = FALSE, row.names = FALSE, col.names = TRUE)
+
+
+```
+
+#Identifying the alleles for each genome-wide SNP
+
+```{r}
+# Analyze genotype data from PED file
+ped_file <- read.csv("~/only_sig_snps.ped", sep="", header = FALSE)
+colnames(ped_file) <- c("FID", "IID", "PID", "MID", "SEX", "PHENO", "SNP1A", "SNP1B", "SNP2A", "SNP2B", "SNP3A", "SNP3B", "SNP4A", "SNP4B")
+head(ped_file)  # Preview the first few rows of the PED file
+
+# Combine alleles for each SNP to create a genotype column
+ped_file$SNP1 <- paste(ped_file$SNP1A, ped_file$SNP1B)
+ped_file$SNP2 <- paste(ped_file$SNP2A, ped_file$SNP2B)
+ped_file$SNP3 <- paste(ped_file$SNP3A, ped_file$SNP3B)
+ped_file$SNP4 <- paste(ped_file$SNP4A, ped_file$SNP4B)
+
+head(ped_file)  # Preview updated PED file with genotypes
+
+# Check unique genotypes for each SNP
+unique_genotypes_snp1 <- unique(ped_file$SNP1)
+unique_genotypes_snp2 <- unique(ped_file$SNP2)
+unique_genotypes_snp3 <- unique(ped_file$SNP3)
+unique_genotypes_snp4 <- unique(ped_file$SNP4)
+
+# Print unique genotypes for each SNP
+print("Unique genotypes for SNP1:")
+print(unique_genotypes_snp1)
+
+print("Unique genotypes for SNP2:")
+print(unique_genotypes_snp2)
+
+print("Unique genotypes for SNP3:")
+print(unique_genotypes_snp3)
+
+print("Unique genotypes for SNP4:")
+print(unique_genotypes_snp4)
+
+
+# Count genotypes for each phenotype
+genotype_counts <- ped_file %>%
+  group_by(PHENO) %>%
+  summarise(
+    SNP1_GG = sum(SNP1 == "G G"),
+    SNP1_GT = sum(SNP1 == "T G"),
+    SNP1_TT = sum(SNP1 == "T T"),
+    SNP2_TT = sum(SNP2 == "T T"),
+    SNP2_GT = sum(SNP2 == "G T"),
+    SNP2_00 = sum(SNP2 == "0 0"),
+    SNP3_CC = sum(SNP3 == "C C"),
+    SNP3_TC = sum(SNP3 == "T C"),
+    SNP3_00 = sum(SNP3 == "0 0"),
+    SNP4_AA = sum(SNP4 == "A A"),
+    SNP4_GA = sum(SNP4 == "G A"),
+    SNP4_00 = sum(SNP4 == "0 0")
+  )
+
+# Print the summarized genotype counts by phenotype
+print(genotype_counts) 
+```

@@ -1,0 +1,43 @@
+### Script for Processing Control PLINK Files ###
+
+## Step 1: Copy Control Files to Local Directory
+# Using Google Cloud Storage to copy control PLINK files to the working directory
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/data/test_plink_controls.bed /home/jupyter/controls/
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/data/test_plink_controls.bim /home/jupyter/controls/
+gsutil cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/data/test_plink_controls.fam /home/jupyter/controls/
+
+## Step 2: Update Phenotype Information in .fam File
+# Set phenotype column (column 6) to "1" for all individuals to indicate control status
+awk '{$6=1; print}' /home/jupyter/controls/test_plink_controls.fam > phenotype_updated.txt
+# Preview the updated phenotype file
+head phenotype_updated.txt
+# Replace original .fam file with updated phenotype file
+mv phenotype_updated.txt /home/jupyter/controls/test_plink_controls.fam
+
+## Step 3: Perform Initial Quality Control (QC) on Control Data
+# Applying filters to exclude low-quality data
+plink --bfile /home/jupyter/controls/test_plink_controls \
+      --geno 0.05 \
+      --mac 20 \
+      --mind 0.05 \
+      --hwe 0.0001 \
+      --make-bed \
+      --out controls_qc
+# QC result: 25151978 variants and 36049 individuals pass filters
+
+## Step 4: Update Sex Information
+# Copy the sex update file (from R environment or another source)
+gsutil -m cp /home/rstudio/controls_sex.txt gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/
+gsutil -m cp gs://fc-secure-e8c07dee-29f2-4c12-a27b-56054fc762ef/controls_sex.txt /home/jupyter/controls/
+
+# Format the sex information file to match PLINK's requirements
+awk '{print $1, $2, $3}' /home/jupyter/controls/controls_sex.txt > /home/jupyter/controls/sex.txt
+# Update sex information in the PLINK dataset
+plink --bfile controls_qc --update-sex /home/jupyter/controls/sex.txt --make-bed --out controls_sex
+# QC result: 25151978 variants and 36049 individuals pass filters, with updated genotyping rate of 0.999218
+
+## Step 5: Remove Individuals with Unknown Sex
+# Create a list of individuals with sex coded as "0" (unknown) and remove them
+awk '$5 == 0 {print $1, $2}' /home/jupyter/controls/controls_sex.fam > remove_ids.txt
+plink --bfile controls_sex --remove remove_ids.txt --make-bed --out controls_removed_sex
+# Final QC result: 25151978 variants and 35441 individuals pass filters, with genotyping rate of 0.999218

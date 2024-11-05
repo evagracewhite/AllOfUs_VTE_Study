@@ -1,0 +1,128 @@
+---
+title: "Sex at Birth"
+output: html_document
+date: "2024-05-08"
+---
+
+```{r}
+# Load required libraries
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(bigrquery)
+library(dplyr)
+```
+
+## Load in the dataset Cases Sex at Birth
+
+```{r}
+# Extract data into data frames
+## The code to extract individual-level data from the All of Us project was executed here.
+## Note: The actual extraction code is not included for privacy reasons.
+```
+
+#Creating person_id for the Hail Matrix Table
+
+```{r}
+# For cases: Extract FID and IID by selecting relevant columns from updated_fam
+FID_and_IID_cases <- updated_fam %>% 
+  select(-recoded_sex, -date_of_birth)  # Exclude unnecessary columns
+head(FID_and_IID_cases) 
+dim(FID_and_IID_cases)   
+
+# Write the person_id list for cases to a text file
+write.table(FID_and_IID_cases, file = "cases_person_id.txt", sep = "\t", 
+            quote = FALSE, row.names = FALSE, col.names = TRUE)
+
+# For controls: Load control data and extract person_id
+control_df <- dataset_76669170_person_df  # Load control data frame
+control_person_id <- control_df %>% 
+  select(person_id)  
+head(control_person_id) 
+dim(control_person_id)  
+
+# Write the person_id list for controls to a text file
+write.table(control_person_id, file = "control_sample_id.txt", sep = "\t", 
+            quote = FALSE, row.names = FALSE, col.names = TRUE)
+
+```
+
+# Recoding the sex from "Female" and "Male" to 2 and 1 for cases
+
+```{r}
+# For cases: Load the dataset for cases and sort by person_id
+cases_df <- dataset_53505653_person_df %>%  
+  arrange(person_id)  
+head(cases_df)
+
+# Generate a summary of counts by sex_at_birth
+summary_df <- cases_df %>%
+  group_by(sex_at_birth) %>%
+  summarize(count = n())  
+summary_df  
+
+# recoding sex_at_birth
+fam_format <- cases_df %>%
+  mutate(recoded_sex = recode(sex_at_birth, "Male" = 1, "Female" = 2, .default = 0))  # Recode sex
+head(fam_format)  
+
+# Update the family data by removing the original sex_at_birth column
+updated_fam <- fam_format %>% select(-sex_at_birth)  
+updated_fam  
+
+# Create final data frame for cases, renaming and adding FID
+df <- updated_fam %>%
+  rename(IID = person_id) %>% 
+  mutate(FID = 0) %>%  
+  select(FID, IID, recoded_sex) %>%  
+  arrange(FID, IID, recoded_sex)  
+head(df)  
+dim(df)  
+
+# Write the final case data to a text file
+write.table(df, file = "sex_cases.txt", sep = "\t", quote = FALSE, 
+            row.names = FALSE, col.names = FALSE)
+
+```
+
+# Recoding the sex from "Female" and "Male" to 2 and 1 for controls
+
+```{r}
+# Load the control dataset and sort by person_id
+sorted_dataset1 <- control_df %>%  
+  arrange(person_id) 
+head(sorted_dataset1) 
+
+# Generate a summary of counts by sex_at_birth for controls
+summary_df1 <- sorted_dataset1 %>%
+  group_by(sex_at_birth) %>%
+  summarize(count = n()) 
+summary_df1 
+
+# recoding sex_at_birth
+fam_format1 <- sorted_dataset1 %>%
+  mutate(recoded_sex = recode(sex_at_birth, "Male" = 1, "Female" = 2, .default = 0))  # Recode sex
+head(fam_format1)  
+
+# Update the family data for controls by removing unnecessary columns
+updated_fam1 <- fam_format1 %>% select(-date_of_birth, -sex_at_birth) 
+updated_fam1 
+
+# Create final data frame for controls, renaming and adding FID
+df2 <- updated_fam1 %>%
+  rename(IID = person_id) 
+  mutate(FID = 0) %>% 
+  select(FID, IID, recoded_sex) %>%  
+  arrange(FID, IID, recoded_sex) 
+head(df2) 
+dim(df2)   
+
+# Write the final control data to a text file
+write.table(df2, file = "controls_sex.txt", sep = "\t", quote = FALSE, 
+            row.names = FALSE, col.names = FALSE)
+
+
+```
+
+
+
+

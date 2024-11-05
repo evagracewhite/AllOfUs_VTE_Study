@@ -1,0 +1,114 @@
+### Merging PLINK Files (Cases and Controls) ###
+
+# Define paths for case and control files
+CASE_FILE="/home/jupyter/cases/cases_ready_for_merge"
+CONTROL_FILE="/home/jupyter/controls/controls_removed_sex"
+
+# Create a directory for merged files
+MERGE_DIR="/home/jupyter/merging"
+mkdir -p $MERGE_DIR
+
+
+
+
+### Identify Common Variants ###
+# Only keep variants common between cases and controls
+awk '{print $2}' ${CASE_FILE}.bim | sort > cases_snp_list.txt
+awk '{print $2}' ${CONTROL_FILE}.bim | sort > controls_snp_list.txt
+comm -12 cases_snp_list.txt controls_snp_list.txt > common_snps.txt
+wc -l common_snps.txt  # Output: 13195180 shared SNPs
+
+# Filter cases and controls for common SNPs
+plink --bfile $CASE_FILE --extract common_snps.txt --make-bed --out cases_filtered
+# QC result: 13195180 variants, 1382 cases pass filters
+
+plink --bfile $CONTROL_FILE --extract common_snps.txt --make-bed --out controls_filtered
+# QC result: 13195180 variants, 35441 controls pass filters
+
+# Merge cases and controls into one dataset
+plink --bfile cases_filtered --bmerge controls_filtered --out merged_dataset
+
+
+
+
+### Secondary Quality Control (QC) ###
+
+# Run QC filters on merged dataset
+plink --bfile merged_dataset \
+      --geno 0.05 \
+      --mind 0.05 \
+      --mac 20 \
+      --hwe 0.0001 \
+      --make-bed \
+      --out qc
+# QC result: 13192091 variants, 36823 people pass filters (1382 cases, 35441 controls)
+
+
+
+
+### Remove Heterozygous Haploid Genotypes ###
+# Identify and remove heterozygous haploid SNPs
+awk '{print $3}' qc.hh | sort | uniq > hhsnps_unique.txt
+plink --bfile qc --exclude hhsnps_unique.txt --make-bed --out removed_hh
+# QC result: 13173522 variants, 36823 people pass filters
+
+
+
+
+
+### Create Pruned Dataset for PCA and Relatedness Analysis ###
+
+# Prune for linkage disequilibrium (LD) to create a clean dataset for PCA
+plink --bfile removed_hh --indep-pairwise 50 5 0.2 --out pruned_data
+plink --bfile removed_hh --extract pruned_data.prune.in --make-bed --out pruned_data
+# 3140623 variants remain after pruning
+
+
+
+
+
+### Relatedness Analysis (IBD) ###
+
+# First round of IBD filtering to remove related individuals
+plink --bfile pruned_data --genome --min 0.0935 --out ibd
+awk '$10 > 0.125' ibd.genome | awk '{print $1, $2, $3, $4}' > related_individuals.txt
+awk '{print $1, $2}' related_individuals.txt | sort | uniq -c | sort -nr > iid_counts.txt
+awk '{print $3, $4}' related_individuals.txt | sort | uniq -c | sort -nr >> iid_counts.txt
+awk '$1 > 10 {print $2, $3}' iid_counts.txt | sort > people_to_remove.txt
+plink --bfile pruned_data --remove people_to_remove.txt --make-bed --out removed_related_individuals
+# QC result: 1337 cases, 34360 controls
+
+# Second round of IBD filtering
+plink --bfile removed_related_individuals --genome --min 0.0935 --out ibd_second
+awk '$10 > 0.125' ibd_second.genome | awk '{print $1, $2, $3, $4}' > related_individuals2.txt
+awk '{print $1, $2}' related_individuals2.txt | sort | uniq -c | sort -nr > iid_counts2.txt
+awk '{print $3, $4}' related_individuals2.txt | sort | uniq -c | sort -nr >> iid_counts2.txt
+awk '$1 > 2 {print $2, $3}' iid_counts2.txt | sort > people_to_remove2.txt
+plink --bfile removed_related_individuals --remove people_to_remove2.txt --make-bed --out removed_related_individuals2
+# QC result: 1333 cases, 34037 controls
+
+# Third round of IBD filtering
+plink --bfile removed_related_individuals2 --genome --min 0.0935 --out ibd_third
+awk '$10 > 0.125' ibd_third.genome | awk '{print $1, $2, $3, $4}' > related_individuals3.txt
+awk '{print $2}' related_individuals3.txt | sort -u > unique_column2.txt
+plink --bfile removed_related_individuals2 --remove unique_column2.txt --make-bed --out removed_related_individuals3
+# QC result: 1217 cases, 30413 controls
+
+# Fourth round of IBD filtering to double-check for related individuals
+plink --bfile removed_related_individuals3 --genome --min 0.0935 --out ibd_forth
+awk '$10 > 0.125' ibd_forth.genome | awk '{print $1, $2, $3, $4}' > related_individuals4.txt
+# No related individuals remaining
+
+
+
+
+
+
+### Final Dataset Creation ###
+
+# Create a list of individuals to keep based on final IBD results
+awk '{print $1, $2}' removed_related_individuals3.fam > keep_individuals.txt
+
+# Filter main dataset to keep only unrelated individuals
+plink --bfile removed_hh --keep keep_individuals.txt --make-bed --out plink_files
+# Final QC result: 13173522 variants, 31630 people pass filters (1217 cases, 30413 controls)
