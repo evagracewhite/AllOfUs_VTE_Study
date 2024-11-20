@@ -233,35 +233,62 @@ f_test_result_Systolic_blood_pressure
 
 
 ```{r}
-# Welch Two Sample t-test
-## Conduct t-tests to compare means between cases and controls for each measurement
+#t test on just individuals who are in analysis
+# Load the writexl package
+install.packages("writexl")
+library(writexl)
+
+# Function to perform Welch Two-Sample t-test on multiple variables and save results to Excel
+perform_multiple_t_tests <- function(vars, outcome_var, data, file_name) {
+  # Initialize a list to store results
+  results_list <- list()
+  
+  # Loop through each variable
+  for (var in vars) {
+    # Construct the formula for the t-test
+    formula <- as.formula(paste(var, "~", outcome_var))
+    
+    # Perform the t-test
+    t_test_result <- t.test(formula, data = data)
+    
+    # Extract relevant information
+    results_list[[var]] <- data.frame(
+      Variable = var,
+      t_statistic = t_test_result$statistic,
+      df = t_test_result$parameter,
+      p_value = t_test_result$p.value,
+      ci_low = t_test_result$conf.int[1],
+      ci_high = t_test_result$conf.int[2],
+      mean_control = t_test_result$estimate[1],
+      mean_case = t_test_result$estimate[2]
+    )
+  }
+  
+  # Combine results into a single data frame
+  results_df <- do.call(rbind, results_list)
+  
+  # Write results to Excel file
+  write_xlsx(results_df, path = file_name)
+  
+  cat("Results saved to", file_name, "\n")
+}
+
+# List of variables to analyze
+variables <- c("Body_height", "BMI", "Body_weight", "Diastolic_blood_pressure", 
+               "Heart_rate", "hip_circumference", "Systolic_blood_pressure", "AGE")
+
+# Call the function with the list of variables, outcome variable, and data
+perform_multiple_t_tests(variables, "outcome.x", info, "t_test_results.xlsx")
 
 
-t_test_result_waist <- t.test(Adult_Waist_Circumference_Protocol ~ outcome, data = no_person_id)
-t_test_result_waist
+#chisquare test for sex
+sex_table <- table(info$recoded_sex)
+head(sex_table)
 
-t_test_result_Body_height <- t.test(Body_height ~ outcome, data = no_person_id)
-t_test_result_Body_height
-
-t_test_result_BMI <- t.test(BMI ~ outcome, data = no_person_id)
-t_test_result_BMI
-
-t_test_result_Body_weight <- t.test(Body_weight ~ outcome, data = no_person_id)
-t_test_result_Body_weight
-
-t_test_result_Diastolic_blood_pressure <- t.test(Diastolic_blood_pressure ~ outcome, data = no_person_id)
-t_test_result_Diastolic_blood_pressure
-
-t_test_result_Heart_rate <- t.test(Heart_rate ~ outcome, data = no_person_id)
-t_test_result_Heart_rate
-
-t_test_result_hip_circumference <- t.test(hip_circumference ~ outcome, data = no_person_id)
-t_test_result_hip_circumference
-
-t_test_result_Systolic_blood_pressure <- t.test(Systolic_blood_pressure ~ outcome, data = no_person_id)
-t_test_result_Systolic_blood_pressure
-
+chi_test <- chisq.test(sex_table)
+print(chi_test)
 ```
+
 
 
 
